@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}Accounts - Outlook to Gmail Forwarder{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Outlook Accounts</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <a href="{{ url_for('import_accounts') }}" class="btn btn-sm btn-primary">
+                <i class="bi bi-upload"></i> Import CSV
+            </a>
+            <a href="{{ url_for('export_accounts') }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-download"></i> Export
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Username</th>
+                        <th>Full Name</th>
+                        <th>Status</th>
+                        <th>Last Sync</th>
+                        <th>Forwarded</th>
+                        <th>Errors</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for account in accounts.items %}
+                    <tr>
+                        <td>{{ account.id }}</td>
+                        <td>
+                            <a href="{{ url_for('account_detail', account_id=account.id) }}">
+                                {{ account.username }}
+                            </a>
+                        </td>
+                        <td>{{ account.full_name or '-' }}</td>
+                        <td>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" 
+                                       id="switch-{{ account.id }}"
+                                       {% if account.is_active %}checked{% endif %}
+                                       onchange="toggleAccount({{ account.id }})">
+                                <label class="form-check-label" for="switch-{{ account.id }}">
+                                    {% if account.is_active %}
+                                        <span class="status-active">Active</span>
+                                    {% else %}
+                                        <span class="status-inactive">Inactive</span>
+                                    {% endif %}
+                                </label>
+                            </div>
+                        </td>
+                        <td>
+                            {% if account.last_sync %}
+                                {{ account.last_sync.strftime('%Y-%m-%d %H:%M') }}
+                            {% else %}
+                                <span class="text-muted">Never</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge bg-success">{{ account.total_emails_forwarded }}</span>
+                        </td>
+                        <td>
+                            {% if account.consecutive_errors > 0 %}
+                                <span class="badge bg-danger">{{ account.consecutive_errors }}</span>
+                                {% if account.last_error %}
+                                    <i class="bi bi-info-circle" data-bs-toggle="tooltip" 
+                                       data-bs-placement="top"
+                                       title="{{ account.last_error[:100]|e }}"></i>
+                                {% endif %}
+                            {% else %}
+                                <span class="badge bg-secondary">0</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button type="button" class="btn btn-outline-primary" 
+                                        onclick="testAccount({{ account.id }})" 
+                                        title="Test Connection">
+                                    <i class="bi bi-wifi"></i>
+                                </button>
+                                <a href="{{ url_for('account_detail', account_id=account.id) }}" 
+                                   class="btn btn-outline-info" title="View Details">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Pagination -->
+        {% if accounts.pages > 1 %}
+        <nav aria-label="Page navigation" class="mt-4">
+            <ul class="pagination justify-content-center">
+                <li class="page-item {% if not accounts.has_prev %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('accounts', page=accounts.prev_num) }}">Previous</a>
+                </li>
+                
+                {% for page_num in accounts.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+                    {% if page_num %}
+                        <li class="page-item {% if page_num == accounts.page %}active{% endif %}">
+                            <a class="page-link" href="{{ url_for('accounts', page=page_num) }}">{{ page_num }}</a>
+                        </li>
+                    {% else %}
+                        <li class="page-item disabled">
+                            <span class="page-link">...</span>
+                        </li>
+                    {% endif %}
+                {% endfor %}
+                
+                <li class="page-item {% if not accounts.has_next %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('accounts', page=accounts.next_num) }}">Next</a>
+                </li>
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Toggle account status
+function toggleAccount(accountId) {
+    $.post(`/api/accounts/${accountId}/toggle`, function(response) {
+        if (response.success) {
+            const label = $(`#switch-${accountId}`).next('label');
+            if (response.is_active) {
+                label.html('<span class="status-active">Active</span>');
+            } else {
+                label.html('<span class="status-inactive">Inactive</span>');
+            }
+        } else {
+            // Revert switch
+            $(`#switch-${accountId}`).prop('checked', !$(`#switch-${accountId}`).prop('checked'));
+            alert('Failed to update account status');
+        }
+    }).fail(function() {
+        // Revert switch
+        $(`#switch-${accountId}`).prop('checked', !$(`#switch-${accountId}`).prop('checked'));
+        alert('Failed to update account status');
+    });
+}
+
+// Test account connection
+function testAccount(accountId) {
+    const btn = event.currentTarget;
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    btn.disabled = true;
+    
+    $.post(`/api/accounts/${accountId}/test`, function(response) {
+        if (response.success) {
+            alert('✓ ' + response.message);
+        } else {
+            alert('✗ ' + response.message);
+        }
+    }).fail(function() {
+        alert('Failed to test account connection');
+    }).always(function() {
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+    });
+}
+
+// Initialize tooltips
+$(document).ready(function() {
+    $('[data-bs-toggle="tooltip"]').tooltip();
+});
+</script>
+{% endblock %} 

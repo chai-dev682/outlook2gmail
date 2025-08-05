@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+
+{% block title %}{{ account.username }} - Outlook to Gmail Forwarder{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Account Details</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <a href="{{ url_for('accounts') }}" class="btn btn-sm btn-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Accounts
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Account Information</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr>
+                        <th width="40%">Username:</th>
+                        <td>{{ account.username }}</td>
+                    </tr>
+                    <tr>
+                        <th>Full Name:</th>
+                        <td>{{ account.full_name or '-' }}</td>
+                    </tr>
+                    <tr>
+                        <th>Status:</th>
+                        <td>
+                            {% if account.is_active %}
+                                <span class="badge bg-success">Active</span>
+                            {% else %}
+                                <span class="badge bg-danger">Inactive</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Created:</th>
+                        <td>{{ account.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    </tr>
+                    <tr>
+                        <th>Last Sync:</th>
+                        <td>{{ account.last_sync.strftime('%Y-%m-%d %H:%M') if account.last_sync else 'Never' }}</td>
+                    </tr>
+                    <tr>
+                        <th>Recovery Email:</th>
+                        <td>{{ account.recovery_email or '-' }}</td>
+                    </tr>
+                    <tr>
+                        <th>Proxy:</th>
+                        <td>
+                            {% if account.proxy_host %}
+                                {{ account.proxy_host }}:{{ account.proxy_port }}
+                            {% else %}
+                                Not configured
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+                
+                <div class="mt-3">
+                    <button class="btn btn-primary btn-sm" onclick="toggleAccount({{ account.id }})">
+                        {% if account.is_active %}
+                            <i class="bi bi-pause-fill"></i> Deactivate
+                        {% else %}
+                            <i class="bi bi-play-fill"></i> Activate
+                        {% endif %}
+                    </button>
+                    <button class="btn btn-info btn-sm" onclick="testAccount({{ account.id }})">
+                        <i class="bi bi-wifi"></i> Test Connection
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Statistics</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6">
+                        <h3 class="text-success">{{ account.total_emails_forwarded }}</h3>
+                        <p class="text-muted">Emails Forwarded</p>
+                    </div>
+                    <div class="col-6">
+                        <h3 class="text-danger">{{ account.total_emails_failed }}</h3>
+                        <p class="text-muted">Failed Forwards</p>
+                    </div>
+                </div>
+                
+                {% if account.consecutive_errors > 0 %}
+                <div class="alert alert-warning mt-3">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <strong>Consecutive Errors:</strong> {{ account.consecutive_errors }}
+                </div>
+                {% endif %}
+                
+                {% if account.last_error %}
+                <div class="alert alert-danger">
+                    <i class="bi bi-x-circle"></i>
+                    <strong>Last Error:</strong><br>
+                    {{ account.last_error }}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Forwarding History</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Subject</th>
+                                <th>From</th>
+                                <th>Status</th>
+                                <th>Attachments</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in history %}
+                            <tr>
+                                <td>{{ item.forwarded_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                <td>{{ item.subject[:50] }}{% if item.subject|length > 50 %}...{% endif %}</td>
+                                <td>{{ item.sender }}</td>
+                                <td>
+                                    {% if item.status == 'success' %}
+                                        <span class="badge bg-success">Success</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Failed</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if item.has_attachments %}
+                                        <i class="bi bi-paperclip"></i>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted">No forwarding history yet</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Toggle account status
+function toggleAccount(accountId) {
+    $.post(`/api/accounts/${accountId}/toggle`, function(response) {
+        if (response.success) {
+            location.reload();
+        } else {
+            alert('Failed to update account status');
+        }
+    });
+}
+
+// Test account connection
+function testAccount(accountId) {
+    const btn = event.currentTarget;
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Testing...';
+    btn.disabled = true;
+    
+    $.post(`/api/accounts/${accountId}/test`, function(response) {
+        if (response.success) {
+            alert('✓ ' + response.message);
+        } else {
+            alert('✗ ' + response.message);
+        }
+    }).fail(function() {
+        alert('Failed to test account connection');
+    }).always(function() {
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+    });
+}
+</script>
+{% endblock %} 

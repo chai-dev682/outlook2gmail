@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Import Accounts - Outlook to Gmail Forwarder{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Import Accounts</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Import from CSV</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="file" class="form-label">Select CSV File</label>
+                        <input type="file" class="form-control" id="file" name="file" accept=".csv" required>
+                        <div class="form-text">
+                            Upload a CSV file containing Outlook account information.
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-upload"></i> Import Accounts
+                        </button>
+                        <a href="{{ url_for('accounts') }}" class="btn btn-secondary">
+                            Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">CSV Format</h5>
+            </div>
+            <div class="card-body">
+                <p class="small">The CSV file should contain the following columns:</p>
+                <ul class="small">
+                    <li><strong>Provider</strong>: Must be "Outlook"</li>
+                    <li><strong>Username</strong>: Outlook email address</li>
+                    <li><strong>OAuth2 Refresh Token</strong>: Refresh token for authentication</li>
+                    <li><strong>Full Name</strong>: Account owner name (optional)</li>
+                    <li><strong>Recovery Email</strong>: Recovery email (optional)</li>
+                    <li><strong>Birthday</strong>: Birthday (optional)</li>
+                    <li><strong>Browser Proxy</strong>: Proxy settings (optional)</li>
+                </ul>
+                
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> 
+                    Existing accounts will be skipped during import.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Import History</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Recent imports will be shown here.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

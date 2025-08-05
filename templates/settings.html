@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Outlook to Gmail Forwarder{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Settings</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Current Configuration</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr>
+                        <th>Environment:</th>
+                        <td>{{ config.ENV if config.ENV else 'Production' }}</td>
+                    </tr>
+                    <tr>
+                        <th>Debug Mode:</th>
+                        <td>
+                            {% if config.DEBUG %}
+                                <span class="text-warning">Enabled</span>
+                            {% else %}
+                                <span class="text-success">Disabled</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Database:</th>
+                        <td><code>{{ config.SQLALCHEMY_DATABASE_URI }}</code></td>
+                    </tr>
+                    <tr>
+                        <th>Gmail Target:</th>
+                        <td>{{ config.GMAIL_TARGET_EMAIL }}</td>
+                    </tr>
+                    <tr>
+                        <th>Batch Size:</th>
+                        <td>{{ config.BATCH_SIZE }} emails</td>
+                    </tr>
+                    <tr>
+                        <th>Max Emails Per Run:</th>
+                        <td>{{ config.MAX_EMAILS_PER_RUN }} emails</td>
+                    </tr>
+                    <tr>
+                        <th>Forward Interval:</th>
+                        <td>{{ config.FORWARD_INTERVAL_MINUTES }} minutes</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Microsoft OAuth</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr>
+                        <th>Client ID:</th>
+                        <td>
+                            {% if config.MICROSOFT_CLIENT_ID %}
+                                <code>{{ config.MICROSOFT_CLIENT_ID[:8] }}...{{ config.MICROSOFT_CLIENT_ID[-4:] }}</code>
+                            {% else %}
+                                <span class="text-danger">Not configured</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Authority:</th>
+                        <td><code>{{ config.MICROSOFT_AUTHORITY }}</code></td>
+                    </tr>
+                    <tr>
+                        <th>Scopes:</th>
+                        <td>
+                            <ul class="list-unstyled mb-0">
+                                {% for scope in config.MICROSOFT_SCOPE %}
+                                <li><small>{{ scope }}</small></li>
+                                {% endfor %}
+                            </ul>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Environment Variables</h5>
+            </div>
+            <div class="card-body">
+                <p>To update settings, modify the <code>.env</code> file and restart the application.</p>
+                
+                <h6>Required Variables:</h6>
+                <pre><code># Flask Configuration
+SECRET_KEY=your-secret-key-here
+
+# Database
+DATABASE_URL=sqlite:///outlook2gmail.db
+
+# Microsoft OAuth
+MICROSOFT_CLIENT_ID=your-client-id
+MICROSOFT_CLIENT_SECRET=your-client-secret
+
+# Gmail Configuration
+GMAIL_TARGET_EMAIL=target@gmail.com
+GMAIL_CREDENTIALS_FILE=config/gmail_credentials.json
+
+# Forwarding Settings
+BATCH_SIZE=100
+MAX_EMAILS_PER_RUN=1000
+FORWARD_INTERVAL_MINUTES=30</code></pre>
+                
+                <h6>Optional Variables:</h6>
+                <pre><code># Redis Configuration
+REDIS_URL=redis://localhost:6379/0
+
+# Logging
+LOG_LEVEL=INFO
+LOG_FILE=logs/outlook2gmail.log
+
+# Proxy Settings
+USE_PROXY=false</code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">System Information</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Application Version</h6>
+                        <p>1.0.0</p>
+                        
+                        <h6>Python Version</h6>
+                        <p>{{ sys.version.split()[0] if sys else 'Unknown' }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Server Time</h6>
+                        <p id="server-time">Loading...</p>
+                        
+                        <h6>Uptime</h6>
+                        <p id="uptime">Loading...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Update server time
+function updateServerTime() {
+    const now = new Date();
+    $('#server-time').text(now.toLocaleString());
+}
+
+// Calculate uptime (simplified)
+function updateUptime() {
+    // This would normally come from the server
+    $('#uptime').text('Check logs for actual uptime');
+}
+
+$(document).ready(function() {
+    updateServerTime();
+    updateUptime();
+    
+    // Update time every second
+    setInterval(updateServerTime, 1000);
+});
+</script>
+{% endblock %} 
