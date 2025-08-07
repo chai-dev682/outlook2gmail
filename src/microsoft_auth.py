@@ -1,5 +1,6 @@
 import msal
 import requests
+from config.config import Config
 from datetime import datetime, timedelta
 import logging
 from cryptography.fernet import Fernet
@@ -12,12 +13,13 @@ logger = logging.getLogger(__name__)
 class MicrosoftAuth:
     """Handle Microsoft OAuth2 authentication and token management"""
     
-    def __init__(self, client_id, client_secret, authority='https://login.microsoftonline.com/9c521b6c-5cc4-45e0-ab24-231fa04683ab'):
+    def __init__(self, client_id, client_secret, authority=Config.MICROSOFT_AUTHORITY):
         self.client_id = client_id
         self.client_secret = client_secret
         self.authority = authority
         self.scope = ['https://graph.microsoft.com/Mail.Read', 
-                     'https://graph.microsoft.com/Mail.Send']
+                     'https://graph.microsoft.com/Mail.Send',
+                     'https://graph.microsoft.com/User.Read']
         
         # Initialize encryption key
         self.cipher_suite = self._get_cipher_suite()
@@ -89,19 +91,33 @@ class MicrosoftAuth:
     def refresh_access_token(self, refresh_token):
         """Get new access token using refresh token"""
         try:
-            # result = self.app.acquire_token_by_refresh_token(
-            #     refresh_token,
-            #     scopes=self.scope
-            # )
-            # print(f"Result: {result}")
-            # if 'access_token' in result:
-            #     return {
-            #         'access_token': result['access_token'],
-            #         'refresh_token': result.get('refresh_token'),
-            #         'expires_in': result.get('expires_in', 3600)
-            #     }
-            # For personal accounts, we need to use the token endpoint directly
-            token_url = f"{self.authority}/oauth2/v2.0/token"
+            result = self.app.acquire_token_by_refresh_token(
+                refresh_token=refresh_token,
+                scopes=self.scope
+            )
+            
+            if 'access_token' in result:
+                return {
+                    'access_token': result['access_token'],
+                    'refresh_token': result.get('refresh_token', refresh_token),
+                    'expires_in': result.get('expires_in', 3600)
+                }
+            
+            # Check if the error is due to token from different application
+            error_codes = result.get('error_codes', [])
+            if 70000 in error_codes or result.get('error') == 'invalid_grant':
+                logger.error(f"Refresh token was issued for a different application. User needs to re-authenticate.")
+                return {
+                    'error': 'different_client_id', 
+                    'message': 'This refresh token was issued for a different application (likely AYCD). Please re-authenticate with this application.',
+                    'requires_reauth': True
+                }
+            
+            # If MSAL fails for other reasons, log the error and try direct endpoint
+            logger.warning(f"MSAL token refresh failed: {result.get('error_description', 'Unknown error')}")
+            
+            # For personal accounts, we might need to use the token endpoint directly
+            token_url = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"
             
             data = {
                 'client_id': self.client_id,
@@ -118,7 +134,6 @@ class MicrosoftAuth:
             for attempt in range(max_retries):
                 try:
                     response = requests.post(token_url, data=data, timeout=30)
-                    print(f"Response: {response.text}")
                     
                     if response.status_code == 200:
                         result = response.json()
@@ -133,7 +148,15 @@ class MicrosoftAuth:
                         error_codes = error_data.get('error_codes', [])
                         
                         # Check for specific error codes
-                        if error_code == 'invalid_grant' or 70008 in error_codes:
+                        if 70000 in error_codes:
+                            # Token from different client ID
+                            logger.error(f"Refresh token was issued for a different application")
+                            return {
+                                'error': 'different_client_id', 
+                                'message': 'This refresh token was issued for a different application (likely AYCD). Please re-authenticate with this application.',
+                                'requires_reauth': True
+                            }
+                        elif error_code == 'invalid_grant' or 70008 in error_codes:
                             # Refresh token is invalid or expired
                             logger.error(f"Refresh token is invalid or expired for this account")
                             return {'error': 'invalid_token', 'message': 'Refresh token is invalid or expired. Account needs to re-authenticate.'}

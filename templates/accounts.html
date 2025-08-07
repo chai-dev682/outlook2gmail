@@ -34,7 +34,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for account in accounts.items %}
+                    {% for account in accounts %}
                     <tr>
                         <td>{{ account.id }}</td>
                         <td>
@@ -91,6 +91,12 @@
                                    class="btn btn-outline-info" title="View Details">
                                     <i class="bi bi-eye"></i>
                                 </a>
+                                {% if account.consecutive_errors > 0 or account.last_error %}
+                                <a href="{{ url_for('reauth_account', account_id=account.id) }}" 
+                                   class="btn btn-outline-warning" title="Re-authenticate">
+                                    <i class="bi bi-arrow-clockwise"></i>
+                                </a>
+                                {% endif %}
                             </div>
                         </td>
                     </tr>
@@ -98,33 +104,6 @@
                 </tbody>
             </table>
         </div>
-        
-        <!-- Pagination -->
-        {% if accounts.pages > 1 %}
-        <nav aria-label="Page navigation" class="mt-4">
-            <ul class="pagination justify-content-center">
-                <li class="page-item {% if not accounts.has_prev %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('accounts', page=accounts.prev_num) }}">Previous</a>
-                </li>
-                
-                {% for page_num in accounts.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
-                    {% if page_num %}
-                        <li class="page-item {% if page_num == accounts.page %}active{% endif %}">
-                            <a class="page-link" href="{{ url_for('accounts', page=page_num) }}">{{ page_num }}</a>
-                        </li>
-                    {% else %}
-                        <li class="page-item disabled">
-                            <span class="page-link">...</span>
-                        </li>
-                    {% endif %}
-                {% endfor %}
-                
-                <li class="page-item {% if not accounts.has_next %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('accounts', page=accounts.next_num) }}">Next</a>
-                </li>
-            </ul>
-        </nav>
-        {% endif %}
     </div>
 </div>
 {% endblock %}

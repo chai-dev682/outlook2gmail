@@ -73,6 +73,9 @@
                     <button class="btn btn-info btn-sm" onclick="testAccount({{ account.id }})">
                         <i class="bi bi-wifi"></i> Test Connection
                     </button>
+                    <a href="{{ url_for('reauth_account', account_id=account.id) }}" class="btn btn-warning btn-sm">
+                        <i class="bi bi-arrow-clockwise"></i> Re-authenticate
+                    </a>
                 </div>
             </div>
         </div>
@@ -107,6 +110,17 @@
                     <i class="bi bi-x-circle"></i>
                     <strong>Last Error:</strong><br>
                     {{ account.last_error }}
+                </div>
+                {% endif %}
+                
+                {% if account.consecutive_errors > 0 or (account.last_error and ('invalid_grant' in account.last_error or 'AADSTS' in account.last_error or 'token' in account.last_error.lower())) %}
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i>
+                    <strong>Authentication Issue Detected</strong><br>
+                    This account may need to re-authenticate with Microsoft.
+                    <a href="{{ url_for('reauth_account', account_id=account.id) }}" class="btn btn-warning btn-sm ms-2">
+                        <i class="bi bi-arrow-clockwise"></i> Re-authenticate Now
+                    </a>
                 </div>
                 {% endif %}
             </div>

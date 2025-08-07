@@ -12,6 +12,8 @@ class OutlookAccount(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(255), unique=True, nullable=False)
+    email = db.Column(db.String(255), nullable=True)  # Adding email field
+    display_name = db.Column(db.String(255), nullable=True)  # Adding display name
     password = db.Column(db.String(255), nullable=True)  # Encrypted
     refresh_token = db.Column(db.Text, nullable=True)  # Encrypted
     access_token = db.Column(db.Text, nullable=True)  # Encrypted
@@ -44,6 +46,7 @@ class OutlookAccount(db.Model):
     
     # Relationships
     forwarding_history = db.relationship('ForwardingHistory', backref='account', lazy='dynamic')
+    forwarding_rules = db.relationship('ForwardingRule', backref='outlook_account', lazy='dynamic')
     
     def __repr__(self):
         return f'<OutlookAccount {self.username}>'
@@ -52,6 +55,8 @@ class OutlookAccount(db.Model):
         return {
             'id': self.id,
             'username': self.username,
+            'email': self.email,
+            'display_name': self.display_name,
             'full_name': self.full_name,
             'is_active': self.is_active,
             'last_sync': self.last_sync.isoformat() if self.last_sync else None,
@@ -62,12 +67,113 @@ class OutlookAccount(db.Model):
             'created_at': self.created_at.isoformat()
         }
 
+class GmailAccount(db.Model):
+    """Model for storing Gmail account information"""
+    __tablename__ = 'gmail_accounts'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(255), unique=True, nullable=False)
+    display_name = db.Column(db.String(255), nullable=True)
+    
+    # OAuth credentials (encrypted)
+    refresh_token = db.Column(db.Text, nullable=True)
+    access_token = db.Column(db.Text, nullable=True)
+    token_expires_at = db.Column(db.DateTime, nullable=True)
+    
+    # Status
+    is_active = db.Column(db.Boolean, default=True)
+    last_used = db.Column(db.DateTime, nullable=True)
+    last_error = db.Column(db.Text, nullable=True)
+    consecutive_errors = db.Column(db.Integer, default=0)
+    
+    # Statistics
+    total_emails_received = db.Column(db.Integer, default=0)
+    total_emails_failed = db.Column(db.Integer, default=0)
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    forwarding_history = db.relationship('ForwardingHistory', backref='gmail_account', lazy='dynamic')
+    forwarding_rules = db.relationship('ForwardingRule', backref='gmail_account', lazy='dynamic')
+    
+    def __repr__(self):
+        return f'<GmailAccount {self.email}>'
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'email': self.email,
+            'display_name': self.display_name,
+            'is_active': self.is_active,
+            'last_used': self.last_used.isoformat() if self.last_used else None,
+            'last_error': self.last_error,
+            'consecutive_errors': self.consecutive_errors,
+            'total_emails_received': self.total_emails_received,
+            'total_emails_failed': self.total_emails_failed,
+            'created_at': self.created_at.isoformat()
+        }
+
+class ForwardingRule(db.Model):
+    """Model for defining forwarding rules between Outlook and Gmail accounts"""
+    __tablename__ = 'forwarding_rules'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    outlook_account_id = db.Column(db.Integer, db.ForeignKey('outlook_accounts.id'), nullable=False)
+    gmail_account_id = db.Column(db.Integer, db.ForeignKey('gmail_accounts.id'), nullable=False)
+    
+    # Rule details
+    rule_name = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    
+    # Filtering criteria (JSON stored as text)
+    filter_criteria = db.Column(JSON, nullable=True)  # e.g., {"subject_contains": "important", "from_domain": "company.com"}
+    
+    # Rule settings
+    is_active = db.Column(db.Boolean, default=True)
+    priority = db.Column(db.Integer, default=0)  # Lower number = higher priority
+    
+    # Email modification settings
+    add_prefix = db.Column(db.String(100), nullable=True)  # Prefix to add to subject
+    forward_attachments = db.Column(db.Boolean, default=True)
+    
+    # Statistics
+    emails_processed = db.Column(db.Integer, default=0)
+    last_used = db.Column(db.DateTime, nullable=True)
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<ForwardingRule {self.rule_name}>'
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'outlook_account_id': self.outlook_account_id,
+            'gmail_account_id': self.gmail_account_id,
+            'rule_name': self.rule_name,
+            'description': self.description,
+            'filter_criteria': self.filter_criteria,
+            'is_active': self.is_active,
+            'priority': self.priority,
+            'add_prefix': self.add_prefix,
+            'forward_attachments': self.forward_attachments,
+            'emails_processed': self.emails_processed,
+            'last_used': self.last_used.isoformat() if self.last_used else None,
+            'created_at': self.created_at.isoformat()
+        }
+
 class ForwardingHistory(db.Model):
     """Model for tracking email forwarding history"""
     __tablename__ = 'forwarding_history'
     
     id = db.Column(db.Integer, primary_key=True)
     account_id = db.Column(db.Integer, db.ForeignKey('outlook_accounts.id'), nullable=False)
+    gmail_account_id = db.Column(db.Integer, db.ForeignKey('gmail_accounts.id'), nullable=True)
+    rule_id = db.Column(db.Integer, db.ForeignKey('forwarding_rules.id'), nullable=True)
     
     # Email details
     outlook_message_id = db.Column(db.String(255), nullable=False)
@@ -93,6 +199,8 @@ class ForwardingHistory(db.Model):
         return {
             'id': self.id,
             'account_id': self.account_id,
+            'gmail_account_id': self.gmail_account_id,
+            'rule_id': self.rule_id,
             'outlook_message_id': self.outlook_message_id,
             'subject': self.subject,
             'sender': self.sender,

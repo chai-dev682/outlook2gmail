@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}Gmail Accounts{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>Gmail Accounts</h1>
+                <div>
+                    <a href="{{ url_for('gmail_auth') }}" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Add Gmail Account
+                    </a>
+                </div>
+            </div>
+
+            {% if accounts %}
+            <div class="card">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Email</th>
+                                    <th>Display Name</th>
+                                    <th>Status</th>
+                                    <th>Last Used</th>
+                                    <th>Emails Received</th>
+                                    <th>Errors</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for account in accounts %}
+                                <tr>
+                                    <td>
+                                        <a href="{{ url_for('gmail_account_detail', account_id=account.id) }}">
+                                            {{ account.email }}
+                                        </a>
+                                    </td>
+                                    <td>{{ account.display_name or 'N/A' }}</td>
+                                    <td>
+                                        <span class="badge badge-{% if account.is_active %}success{% else %}secondary{% endif %}">
+                                            {% if account.is_active %}Active{% else %}Inactive{% endif %}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if account.last_used %}
+                                            {{ account.last_used.strftime('%Y-%m-%d %H:%M') }}
+                                        {% else %}
+                                            <span class="text-muted">Never</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-info">{{ account.emails_received or 0 }}</span>
+                                    </td>
+                                    <td>
+                                        {% if account.consecutive_errors > 0 %}
+                                            <span class="badge badge-danger">{{ account.consecutive_errors }}</span>
+                                        {% else %}
+                                            <span class="badge badge-success">0</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-outline-primary test-account-btn" data-account-id="{{ account.id }}">
+                                                <i class="fas fa-check"></i> Test
+                                            </button>
+                                            <button class="btn btn-outline-{% if account.is_active %}warning{% else %}success{% endif %} toggle-account-btn" 
+                                                    data-account-id="{{ account.id }}">
+                                                <i class="fas fa-{% if account.is_active %}pause{% else %}play{% endif %}"></i>
+                                                {% if account.is_active %}Disable{% else %}Enable{% endif %}
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="card">
+                <div class="card-body text-center">
+                    <i class="fas fa-envelope fa-3x text-muted mb-3"></i>
+                    <h4>No Gmail Accounts</h4>
+                    <p class="text-muted">Add a Gmail account to start receiving forwarded emails.</p>
+                    <a href="{{ url_for('gmail_auth') }}" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Add Gmail Account
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Test account buttons
+    document.querySelectorAll('.test-account-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const accountId = this.getAttribute('data-account-id');
+            testGmailAccount(accountId);
+        });
+    });
+
+    // Toggle account buttons
+    document.querySelectorAll('.toggle-account-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const accountId = this.getAttribute('data-account-id');
+            toggleGmailAccount(accountId);
+        });
+    });
+});
+
+function testGmailAccount(accountId) {
+    fetch('/api/gmail-accounts/' + accountId + '/test', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', 'Test successful: ' + data.message);
+        } else {
+            showAlert('danger', 'Test failed: ' + data.message);
+        }
+    })
+    .catch(error => {
+        showAlert('danger', 'Error testing account: ' + error);
+    });
+}
+
+function toggleGmailAccount(accountId) {
+    fetch('/api/gmail-accounts/' + accountId + '/toggle', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            showAlert('danger', 'Failed to toggle account status');
+        }
+    })
+    .catch(error => {
+        showAlert('danger', 'Error toggling account: ' + error);
+    });
+}
+
+function showAlert(type, message) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = 'alert alert-' + type + ' alert-dismissible fade show';
+    alertDiv.innerHTML = message + '<button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>';
+    document.querySelector('.container-fluid').insertBefore(alertDiv, document.querySelector('.row'));
+    
+    setTimeout(function() {
+        alertDiv.remove();
+    }, 5000);
+}
+</script>
+{% endblock %}

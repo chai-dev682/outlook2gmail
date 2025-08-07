@@ -8,12 +8,13 @@ from email.mime.base import MIMEBase
 from email import encoders
 import html2text
 from bs4 import BeautifulSoup
-from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import json
 import time
 from tqdm import tqdm
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -25,17 +26,49 @@ class EmailForwarder:
         self.gmail_creds_file = gmail_creds_file
         self.gmail_target_email = gmail_target_email
         self.gmail_service = None
+        self.gmail_auth = None
         self.h2t = html2text.HTML2Text()
         self.h2t.ignore_links = False
         
     def initialize_gmail_service(self):
         """Initialize Gmail API service"""
         try:
-            creds = Credentials.from_authorized_user_file(self.gmail_creds_file)
-            self.gmail_service = build('gmail', 'v1', credentials=creds)
-            return True
+            logger.warning("Legacy EmailForwarder detected - Enhanced forwarder recommended for better Gmail support")
+            
+            # Check if credentials file exists
+            if not os.path.exists(self.gmail_creds_file):
+                logger.error(f"Gmail credentials file not found: {self.gmail_creds_file}")
+                logger.info("Please ensure config/gmail_credentials.json exists")
+                return False
+            
+            # For legacy mode, we'll just return False and recommend enhanced forwarder
+            # The enhanced forwarder has proper OAuth handling for multiple Gmail accounts
+            logger.info("Use --use-rules flag or enhanced forwarder for full Gmail OAuth support")
+            logger.info("Legacy mode requires service account credentials or pre-authorized tokens")
+            
+            # Try to load as service account credentials
+            try:
+                # Service account credentials
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    self.gmail_creds_file,
+                    scopes=['https://www.googleapis.com/auth/gmail.send']
+                )
+
+                creds = flow.run_local_server(port=0)
+                
+                # Create Gmail service
+                self.gmail_service = build('gmail', 'v1', credentials=creds)
+                logger.info("Gmail service initialized with service account")
+                return True
+                    
+            except Exception as e:
+                logger.error(f"Failed to load Gmail credentials: {str(e)}")
+                logger.info("For OAuth support, use enhanced forwarder with --use-rules flag")
+                return False
+                
         except Exception as e:
             logger.error(f"Failed to initialize Gmail service: {str(e)}")
+            logger.info("Consider using enhanced forwarder: python cli.py forward-now --use-rules")
             return False
     
     def get_outlook_emails(self, access_token, account, max_emails=100, last_sync_date=None):
@@ -53,9 +86,9 @@ class EmailForwarder:
         }
         
         # Add date filter if last sync date is provided
-        if last_sync_date:
-            filter_date = last_sync_date.strftime('%Y-%m-%dT%H:%M:%SZ')
-            params['$filter'] = f'receivedDateTime gt {filter_date}'
+        # if last_sync_date:
+        #     filter_date = last_sync_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+        #     params['$filter'] = f'receivedDateTime gt {filter_date}'
         
         # Handle proxy if configured
         proxies = None

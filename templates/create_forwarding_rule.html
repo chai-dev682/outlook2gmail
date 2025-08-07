@@ -1,0 +1,388 @@
+{% extends "base.html" %}
+
+{% block title %}Create Forwarding Rule{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>Create Forwarding Rule</h1>
+                <div>
+                    <a href="{{ url_for('forwarding_rules') }}" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Rules
+                    </a>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="card">
+                        <div class="card-body">
+                            <form id="ruleForm">
+                                <!-- Basic Information -->
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="rule_name" class="form-label">Rule Name *</label>
+                                        <input type="text" class="form-control" id="rule_name" name="rule_name" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="priority" class="form-label">Priority</label>
+                                        <input type="number" class="form-control" id="priority" name="priority" value="0" min="0" max="999">
+                                        <div class="form-text">Lower number = higher priority</div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="description" class="form-label">Description</label>
+                                    <textarea class="form-control" id="description" name="description" rows="2"></textarea>
+                                </div>
+
+                                <!-- Account Selection -->
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="outlook_account_id" class="form-label">Source Outlook Account *</label>
+                                        <select class="form-control" id="outlook_account_id" name="outlook_account_id" required>
+                                            <option value="">Select Outlook Account</option>
+                                            {% for account in outlook_accounts %}
+                                            <option value="{{ account.id }}">
+                                                {{ account.email or account.username }}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="gmail_account_id" class="form-label">Target Gmail Account *</label>
+                                        <select class="form-control" id="gmail_account_id" name="gmail_account_id" required>
+                                            <option value="">Select Gmail Account</option>
+                                            {% for account in gmail_accounts %}
+                                            <option value="{{ account.id }}">
+                                                {{ account.email }}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- Rule Settings -->
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="add_prefix" class="form-label">Subject Prefix</label>
+                                        <input type="text" class="form-control" id="add_prefix" name="add_prefix" placeholder="e.g., [WORK]">
+                                        <div class="form-text">Optional prefix to add to email subject</div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-check mt-4">
+                                            <input class="form-check-input" type="checkbox" id="forward_attachments" name="forward_attachments" checked>
+                                            <label class="form-check-label" for="forward_attachments">
+                                                Forward Attachments
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="is_active" name="is_active" checked>
+                                            <label class="form-check-label" for="is_active">
+                                                Rule Active
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Filter Criteria -->
+                                <div class="mb-3">
+                                    <label class="form-label">Filter Criteria</label>
+                                    <div class="border rounded p-3">
+                                        <div class="mb-3">
+                                            <label for="criteria_type" class="form-label">Criteria Type</label>
+                                            <select class="form-control" id="criteria_type">
+                                                <option value="none">No criteria (match all emails)</option>
+                                                <option value="simple">Simple condition</option>
+                                                <option value="and">Multiple conditions (AND logic)</option>
+                                                <option value="or">Multiple conditions (OR logic)</option>
+                                            </select>
+                                        </div>
+
+                                        <!-- Simple Condition -->
+                                        <div id="simple_condition" class="condition-section" style="display: none;">
+                                            <div class="row">
+                                                <div class="col-md-4">
+                                                    <select class="form-control condition-field">
+                                                        <option value="subject">Subject</option>
+                                                        <option value="sender">Sender Email</option>
+                                                        <option value="sender_name">Sender Name</option>
+                                                        <option value="sender_domain">Sender Domain</option>
+                                                        <option value="importance">Importance</option>
+                                                        <option value="has_attachments">Has Attachments</option>
+                                                        <option value="body">Body Content</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <select class="form-control condition-operator">
+                                                        <option value="equals">Equals</option>
+                                                        <option value="contains">Contains</option>
+                                                        <option value="starts_with">Starts With</option>
+                                                        <option value="ends_with">Ends With</option>
+                                                        <option value="regex">Regex</option>
+                                                        <option value="in_list">In List</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-md-5">
+                                                    <input type="text" class="form-control condition-value" placeholder="Value">
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Multiple Conditions -->
+                                        <div id="multiple_conditions" class="condition-section" style="display: none;">
+                                            <div id="conditions_list"></div>
+                                            <button type="button" class="btn btn-sm btn-outline-primary" id="add_condition">
+                                                <i class="fas fa-plus"></i> Add Condition
+                                            </button>
+                                        </div>
+
+                                        <!-- JSON View -->
+                                        <div class="mt-3">
+                                            <label class="form-label">JSON Preview:</label>
+                                            <textarea class="form-control" id="criteria_json" rows="6" readonly></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="d-flex justify-content-between">
+                                    <button type="button" class="btn btn-outline-info" id="test_rule">
+                                        <i class="fas fa-vial"></i> Test Rule
+                                    </button>
+                                    <div>
+                                        <button type="button" class="btn btn-secondary" onclick="window.history.back()">Cancel</button>
+                                        <button type="submit" class="btn btn-primary">
+                                            <i class="fas fa-save"></i> Create Rule
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Help Panel -->
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5><i class="fas fa-info-circle"></i> Rule Examples</h5>
+                        </div>
+                        <div class="card-body">
+                            <h6>Simple Rules:</h6>
+                            <ul class="list-unstyled">
+                                <li><strong>Subject contains "urgent"</strong><br>
+                                    <small class="text-muted">Forwards urgent emails</small></li>
+                                <li><strong>Sender domain equals "company.com"</strong><br>
+                                    <small class="text-muted">Forwards emails from company</small></li>
+                                <li><strong>Importance equals "high"</strong><br>
+                                    <small class="text-muted">Forwards high priority emails</small></li>
+                            </ul>
+
+                            <h6>Complex Rules:</h6>
+                            <ul class="list-unstyled">
+                                <li><strong>High importance AND has attachments</strong><br>
+                                    <small class="text-muted">Important emails with files</small></li>
+                                <li><strong>From boss@company.com OR urgent in subject</strong><br>
+                                    <small class="text-muted">Boss emails or urgent messages</small></li>
+                            </ul>
+
+                            <h6>Available Fields:</h6>
+                            <ul class="list-unstyled">
+                                <li><code>subject</code> - Email subject</li>
+                                <li><code>sender</code> - Sender email</li>
+                                <li><code>sender_domain</code> - Sender domain</li>
+                                <li><code>importance</code> - Email priority</li>
+                                <li><code>has_attachments</code> - Has files</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let conditionCount = 0;
+
+document.addEventListener('DOMContentLoaded', function() {
+    const criteriaType = document.getElementById('criteria_type');
+    const simpleCondition = document.getElementById('simple_condition');
+    const multipleConditions = document.getElementById('multiple_conditions');
+    
+    criteriaType.addEventListener('change', function() {
+        simpleCondition.style.display = 'none';
+        multipleConditions.style.display = 'none';
+        
+        if (this.value === 'simple') {
+            simpleCondition.style.display = 'block';
+        } else if (this.value === 'and' || this.value === 'or') {
+            multipleConditions.style.display = 'block';
+            if (document.getElementById('conditions_list').children.length === 0) {
+                addCondition();
+            }
+        }
+        updateCriteriaJson();
+    });
+    
+    document.getElementById('add_condition').addEventListener('click', addCondition);
+    document.getElementById('test_rule').addEventListener('click', testRule);
+    document.getElementById('ruleForm').addEventListener('submit', submitRule);
+    
+    // Add change listeners for criteria updates
+    document.addEventListener('change', function(e) {
+        if (e.target.matches('.condition-field, .condition-operator, .condition-value')) {
+            updateCriteriaJson();
+        }
+    });
+    
+    // Initial update
+    updateCriteriaJson();
+});
+
+function addCondition() {
+    conditionCount++;
+    const conditionHtml = `
+        <div class="condition-row mb-2" data-condition="${conditionCount}">
+            <div class="row">
+                <div class="col-md-3">
+                    <select class="form-control condition-field">
+                        <option value="subject">Subject</option>
+                        <option value="sender">Sender Email</option>
+                        <option value="sender_name">Sender Name</option>
+                        <option value="sender_domain">Sender Domain</option>
+                        <option value="importance">Importance</option>
+                        <option value="has_attachments">Has Attachments</option>
+                        <option value="body">Body Content</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-control condition-operator">
+                        <option value="equals">Equals</option>
+                        <option value="contains">Contains</option>
+                        <option value="starts_with">Starts With</option>
+                        <option value="ends_with">Ends With</option>
+                        <option value="regex">Regex</option>
+                        <option value="in_list">In List</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <input type="text" class="form-control condition-value" placeholder="Value">
+                </div>
+                <div class="col-md-2">
+                    <button type="button" class="btn btn-sm btn-outline-danger remove-condition">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('conditions_list').insertAdjacentHTML('beforeend', conditionHtml);
+    
+    // Add remove listener
+    document.querySelector(`[data-condition="${conditionCount}"] .remove-condition`).addEventListener('click', function() {
+        this.closest('.condition-row').remove();
+        updateCriteriaJson();
+    });
+}
+
+function updateCriteriaJson() {
+    const criteriaType = document.getElementById('criteria_type').value;
+    let criteria = null;
+    
+    if (criteriaType === 'simple') {
+        const field = document.querySelector('#simple_condition .condition-field').value;
+        const operator = document.querySelector('#simple_condition .condition-operator').value;
+        const value = document.querySelector('#simple_condition .condition-value').value;
+        
+        if (field && value) {
+            criteria = { field, operator, value };
+        }
+    } else if (criteriaType === 'and' || criteriaType === 'or') {
+        const conditions = [];
+        document.querySelectorAll('#conditions_list .condition-row').forEach(row => {
+            const field = row.querySelector('.condition-field').value;
+            const operator = row.querySelector('.condition-operator').value;
+            const value = row.querySelector('.condition-value').value;
+            
+            if (field && value) {
+                conditions.push({ field, operator, value });
+            }
+        });
+        
+        if (conditions.length > 0) {
+            criteria = { [criteriaType]: conditions };
+        }
+    }
+    
+    document.getElementById('criteria_json').value = criteria ? JSON.stringify(criteria, null, 2) : '';
+}
+
+function testRule() {
+    const formData = new FormData(document.getElementById('ruleForm'));
+    const ruleData = Object.fromEntries(formData);
+    ruleData.filter_criteria = document.getElementById('criteria_json').value;
+    
+    // Test with sample data
+    const sampleEmail = {
+        "subject": "Test Email Subject",
+        "from": {
+            "emailAddress": {
+                "address": "test@example.com",
+                "name": "Test Sender"
+            }
+        },
+        "importance": "normal",
+        "hasAttachments": false,
+        "receivedDateTime": "2024-01-15T10:00:00Z"
+    };
+    
+    alert('Rule testing functionality will be available after rule creation. Please create the rule first.');
+}
+
+function submitRule(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    const ruleData = Object.fromEntries(formData);
+    
+    // Add filter criteria
+    const criteriaJson = document.getElementById('criteria_json').value;
+    if (criteriaJson) {
+        try {
+            ruleData.filter_criteria = JSON.parse(criteriaJson);
+        } catch (error) {
+            alert('Invalid JSON in filter criteria');
+            return;
+        }
+    }
+    
+    // Convert checkboxes
+    ruleData.forward_attachments = document.getElementById('forward_attachments').checked;
+    ruleData.is_active = document.getElementById('is_active').checked;
+    
+    fetch('/forwarding-rules/create', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(ruleData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Rule created successfully!');
+            window.location.href = '/forwarding-rules';
+        } else {
+            alert('Error creating rule: ' + data.message);
+        }
+    })
+    .catch(error => {
+        alert('Error creating rule: ' + error);
+    });
+}
+</script>
+{% endblock %} 

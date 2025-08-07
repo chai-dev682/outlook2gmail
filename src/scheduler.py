@@ -4,6 +4,7 @@ from datetime import datetime
 import logging
 from .models import OutlookAccount, ForwardingJob, db
 from .email_forwarder import EmailForwarder
+from .enhanced_email_forwarder import EnhancedEmailForwarder
 from .microsoft_auth import MicrosoftAuth
 from flask import current_app
 import threading
@@ -18,6 +19,7 @@ class ForwardingScheduler:
         self.is_running = False
         self.current_job = None
         self.lock = threading.Lock()
+
         
     def init_app(self, app):
         """Initialize scheduler with Flask app"""
@@ -28,27 +30,36 @@ class ForwardingScheduler:
         
         # Add scheduled job
         interval_minutes = app.config.get('FORWARD_INTERVAL_MINUTES', 30)
+        use_enhanced = app.config.get('USE_ENHANCED_FORWARDER', True)
+        
         self.scheduler.add_job(
-            func=self.run_forwarding_job,
+            func=lambda: self.run_forwarding_job('scheduled', use_enhanced),
             trigger=IntervalTrigger(minutes=interval_minutes),
             id='forward_emails',
             name='Forward emails from Outlook to Gmail',
             replace_existing=True
         )
         
-        logger.info(f"Scheduler initialized with {interval_minutes} minute interval")
+        logger.info(f"Scheduler initialized with {interval_minutes} minute interval, enhanced={use_enhanced}")
+
     
-    def run_forwarding_job(self, job_type='scheduled'):
+    def run_forwarding_job(self, job_type='scheduled', use_enhanced=None):
         """Run email forwarding for all active accounts"""
         with self.lock:
             if self.is_running:
-                logger.info("Forwarding job already running, skipping")
+                logger.warning("Forwarding job already running, skipping")
                 return
             
             self.is_running = True
-        
-        with self.app.app_context():
-            try:
+
+        try:
+            with self.app.app_context():
+                logger.info(f"Starting {job_type} forwarding job")
+                
+                # Determine which forwarder to use
+                if use_enhanced is None:
+                    use_enhanced = self.app.config.get('USE_ENHANCED_FORWARDER', True)
+                
                 # Create job record
                 job = ForwardingJob(
                     job_type=job_type,
@@ -57,30 +68,40 @@ class ForwardingScheduler:
                 )
                 db.session.add(job)
                 db.session.commit()
-                
                 self.current_job = job
-                
-                # Initialize services
-                microsoft_auth = MicrosoftAuth(
-                    self.app.config['MICROSOFT_CLIENT_ID'],
-                    self.app.config['MICROSOFT_CLIENT_SECRET']
-                )
-                
-                forwarder = EmailForwarder(
-                    microsoft_auth,
-                    self.app.config['GMAIL_CREDENTIALS_FILE'],
-                    self.app.config['GMAIL_TARGET_EMAIL']
-                )
-                
-                # Initialize Gmail service
-                if not forwarder.initialize_gmail_service():
-                    raise Exception("Failed to initialize Gmail service")
                 
                 # Get active accounts
                 active_accounts = OutlookAccount.query.filter_by(is_active=True).all()
                 job.total_accounts = len(active_accounts)
                 
-                logger.info(f"Starting forwarding job for {len(active_accounts)} accounts")
+                if not active_accounts:
+                    logger.info("No active accounts found")
+                    job.status = 'completed'
+                    job.completed_at = datetime.utcnow()
+                    db.session.commit()
+                    return
+                
+                # Initialize appropriate forwarder
+                microsoft_auth = MicrosoftAuth(
+                    self.app.config['MICROSOFT_CLIENT_ID'],
+                    self.app.config['MICROSOFT_CLIENT_SECRET']
+                )
+                
+                if use_enhanced:
+                    logger.info("Using enhanced email forwarder with rules")
+                    forwarder = EnhancedEmailForwarder(microsoft_auth)
+                else:
+                    logger.info("Using legacy email forwarder")
+                    forwarder = EmailForwarder(
+                        microsoft_auth,
+                        self.app.config['GMAIL_CREDENTIALS_FILE'],
+                        self.app.config['GMAIL_TARGET_EMAIL']
+                    )
+                    
+                    if not forwarder.initialize_gmail_service():
+                        raise Exception("Failed to initialize Gmail service")
+                
+                logger.info(f"Processing {len(active_accounts)} active accounts")
                 
                 total_success = 0
                 total_failed = 0
@@ -89,7 +110,7 @@ class ForwardingScheduler:
                 # Process each account
                 for account in active_accounts:
                     try:
-                        logger.info(f"Processing account: {account.username}")
+                        logger.info(f"Processing account: {account.email or account.username}")
                         
                         # Forward emails
                         result = forwarder.forward_emails(
@@ -103,9 +124,15 @@ class ForwardingScheduler:
                         
                         if result['errors']:
                             job_errors.append({
-                                'account': account.username,
+                                'account': account.email or account.username,
                                 'errors': result['errors'][:5]  # Limit errors per account
                             })
+                        
+                        # Log rule usage for enhanced forwarder
+                        if use_enhanced and result.get('processed_rules'):
+                            logger.info(f"Rules used for {account.email}:")
+                            for rule_info in result['processed_rules'].values():
+                                logger.info(f"  - {rule_info['rule_name']}: {rule_info['count']} emails -> {rule_info['gmail_account']}")
                         
                         job.processed_accounts += 1
                         
@@ -116,9 +143,9 @@ class ForwardingScheduler:
                             db.session.commit()
                         
                     except Exception as e:
-                        logger.error(f"Error processing account {account.username}: {str(e)}")
+                        logger.error(f"Error processing account {account.email or account.username}: {str(e)}")
                         job_errors.append({
-                            'account': account.username,
+                            'account': account.email or account.username,
                             'errors': [str(e)]
                         })
                 
@@ -131,35 +158,38 @@ class ForwardingScheduler:
                 
                 db.session.commit()
                 
-                logger.info(f"Forwarding job completed: {total_success} success, {total_failed} failed")
+                logger.info(f"Forwarding job completed: {total_success} forwarded, {total_failed} failed")
                 
-            except Exception as e:
-                logger.error(f"Error in forwarding job: {str(e)}")
-                
-                if self.current_job:
-                    self.current_job.status = 'failed'
-                    self.current_job.completed_at = datetime.utcnow()
-                    self.current_job.errors = [{'error': str(e)}]
-                    db.session.commit()
+        except Exception as e:
+            logger.error(f"Forwarding job failed: {str(e)}")
             
-            finally:
-                with self.lock:
-                    self.is_running = False
-                    self.current_job = None
+            try:
+                with self.app.app_context():
+                    if self.current_job:
+                        self.current_job.status = 'failed'
+                        self.current_job.completed_at = datetime.utcnow()
+                        self.current_job.errors = [{'error': str(e)}]
+                        db.session.commit()
+            except:
+                pass
+                
+        finally:
+            self.is_running = False
+            self.current_job = None
     
-    def trigger_manual_job(self):
+    def trigger_manual_job(self, use_enhanced=None):
         """Trigger a manual forwarding job"""
-        # Run in a separate thread to avoid blocking
-        thread = threading.Thread(target=self.run_forwarding_job, args=('manual',))
+        if self.is_running:
+            raise Exception("Forwarding job already running")
+        
+        # Run in background thread
+        thread = threading.Thread(
+            target=self.run_forwarding_job,
+            args=('manual', use_enhanced)
+        )
+        thread.daemon = True
         thread.start()
         return thread
-    
-    def get_next_run_time(self):
-        """Get next scheduled run time"""
-        job = self.scheduler.get_job('forward_emails')
-        if job:
-            return job.next_run_time
-        return None
     
     def pause_scheduler(self):
         """Pause the scheduler"""
@@ -172,27 +202,17 @@ class ForwardingScheduler:
         logger.info("Scheduler resumed")
     
     def update_interval(self, minutes):
-        """Update the forwarding interval"""
-        self.scheduler.remove_job('forward_emails')
-        self.scheduler.add_job(
-            func=self.run_forwarding_job,
-            trigger=IntervalTrigger(minutes=minutes),
-            id='forward_emails',
-            name='Forward emails from Outlook to Gmail',
-            replace_existing=True
+        """Update forwarding interval"""
+        self.scheduler.reschedule_job(
+            job_id='forward_emails',
+            trigger=IntervalTrigger(minutes=minutes)
         )
         logger.info(f"Scheduler interval updated to {minutes} minutes")
-    
-    def shutdown(self):
-        """Shutdown the scheduler"""
-        self.scheduler.shutdown()
-        logger.info("Scheduler shutdown")
     
     def get_status(self):
         """Get scheduler status"""
         return {
-            'is_running': self.is_running,
-            'is_paused': self.scheduler.state == 2,  # STATE_PAUSED
-            'next_run': self.get_next_run_time(),
+            'running': self.scheduler.running,
+            'job_running': self.is_running,
             'current_job_id': self.current_job.id if self.current_job else None
         } 

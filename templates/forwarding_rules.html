@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+
+{% block title %}Forwarding Rules{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>Forwarding Rules</h1>
+                <div>
+                    <a href="{{ url_for('create_forwarding_rule') }}" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Create Rule
+                    </a>
+                </div>
+            </div>
+
+            {% if rules %}
+            <div class="card">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Rule Name</th>
+                                    <th>Outlook Account</th>
+                                    <th>Gmail Account</th>
+                                    <th>Priority</th>
+                                    <th>Status</th>
+                                    <th>Emails Processed</th>
+                                    <th>Last Used</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for rule in rules %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ rule.rule_name }}</strong>
+                                        {% if rule.description %}
+                                        <br><small class="text-muted">{{ rule.description }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if rule.outlook_account %}
+                                        <i class="fab fa-microsoft text-primary"></i>
+                                        {{ rule.outlook_account.email or rule.outlook_account.username }}
+                                        {% else %}
+                                        <span class="text-danger">Account not found</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if rule.gmail_account %}
+                                        <i class="fab fa-google text-success"></i>
+                                        {{ rule.gmail_account.email }}
+                                        {% else %}
+                                        <span class="text-danger">Account not found</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-info-custom">{{ rule.priority }}</span>
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-{% if rule.is_active %}success{% else %}secondary{% endif %}">
+                                            {% if rule.is_active %}Active{% else %}Inactive{% endif %}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-info">{{ rule.emails_processed or 0 }}</span>
+                                    </td>
+                                    <td>
+                                        {% if rule.last_used %}
+                                            {{ rule.last_used.strftime('%Y-%m-%d %H:%M') }}
+                                        {% else %}
+                                            <span class="text-muted">Never</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-outline-info test-rule-btn" data-rule-id="{{ rule.id }}" title="Test Rule">
+                                                <i class="fas fa-vial"></i>
+                                            </button>
+                                            <a href="{{ url_for('edit_forwarding_rule', rule_id=rule.id) }}" class="btn btn-outline-primary" title="Edit Rule">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <button class="btn btn-outline-{% if rule.is_active %}warning{% else %}success{% endif %} toggle-rule-btn" 
+                                                    data-rule-id="{{ rule.id }}" title="{% if rule.is_active %}Disable{% else %}Enable{% endif %} Rule">
+                                                <i class="fas fa-{% if rule.is_active %}pause{% else %}play{% endif %}"></i>
+                                            </button>
+                                            <button class="btn btn-outline-danger delete-rule-btn" data-rule-id="{{ rule.id }}" title="Delete Rule">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="card">
+                <div class="card-body text-center">
+                    <i class="fas fa-arrow-left-right fa-3x text-muted mb-3"></i>
+                    <h4>No Forwarding Rules</h4>
+                    <p class="text-muted">Create forwarding rules to route emails from Outlook accounts to specific Gmail accounts.</p>
+                    <a href="{{ url_for('create_forwarding_rule') }}" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Create Your First Rule
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Test Rule Modal -->
+<div class="modal fade" id="testRuleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Test Forwarding Rule</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="testResult"></div>
+                <div class="form-group">
+                    <label>Sample Email Data (JSON):</label>
+                    <textarea class="form-control" id="sampleEmailData" rows="10">{
+  "subject": "Test Email Subject",
+  "from": {
+    "emailAddress": {
+      "address": "test@example.com",
+      "name": "Test Sender"
+    }
+  },
+  "importance": "normal",
+  "hasAttachments": false,
+  "receivedDateTime": "2024-01-15T10:00:00Z"
+}</textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="runTest">Run Test</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentRuleId = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Test rule buttons
+    document.querySelectorAll('.test-rule-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            currentRuleId = this.getAttribute('data-rule-id');
+            $('#testRuleModal').modal('show');
+        });
+    });
+
+    // Toggle rule buttons
+    document.querySelectorAll('.toggle-rule-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const ruleId = this.getAttribute('data-rule-id');
+            toggleRule(ruleId);
+        });
+    });
+
+    // Delete rule buttons
+    document.querySelectorAll('.delete-rule-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const ruleId = this.getAttribute('data-rule-id');
+            if (confirm('Are you sure you want to delete this rule?')) {
+                deleteRule(ruleId);
+            }
+        });
+    });
+
+    // Run test button
+    document.getElementById('runTest').addEventListener('click', function() {
+        if (currentRuleId) {
+            testRule(currentRuleId);
+        }
+    });
+});
+
+function testRule(ruleId) {
+    const sampleData = document.getElementById('sampleEmailData').value;
+    let emailData;
+    
+    try {
+        emailData = JSON.parse(sampleData);
+    } catch (e) {
+        document.getElementById('testResult').innerHTML = 
+            '<div class="alert alert-danger">Invalid JSON in sample email data</div>';
+        return;
+    }
+
+    fetch('/api/forwarding-rules/' + ruleId + '/test', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(emailData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const result = data.result;
+            const alertClass = result.matches ? 'alert-success' : 'alert-warning';
+            const icon = result.matches ? '<i class="fas fa-check-circle"></i>' : '<i class="fas fa-times-circle"></i>';
+            
+            document.getElementById('testResult').innerHTML = 
+                `<div class="alert ${alertClass}">${icon} 
+                 Rule "${result.rule_name}" ${result.matches ? 'matches' : 'does not match'} 
+                 the sample email "${result.sample_subject}"</div>`;
+        } else {
+            document.getElementById('testResult').innerHTML = 
+                '<div class="alert alert-danger">Test failed: ' + data.message + '</div>';
+        }
+    })
+    .catch(error => {
+        document.getElementById('testResult').innerHTML = 
+            '<div class="alert alert-danger">Error testing rule: ' + error + '</div>';
+    });
+}
+
+function toggleRule(ruleId) {
+    fetch('/api/forwarding-rules/' + ruleId + '/toggle', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            showAlert('danger', 'Failed to toggle rule status');
+        }
+    })
+    .catch(error => {
+        showAlert('danger', 'Error toggling rule: ' + error);
+    });
+}
+
+function deleteRule(ruleId) {
+    fetch('/api/forwarding-rules/' + ruleId + '/delete', {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', data.message);
+            location.reload();
+        } else {
+            showAlert('danger', 'Failed to delete rule');
+        }
+    })
+    .catch(error => {
+        showAlert('danger', 'Error deleting rule: ' + error);
+    });
+}
+
+function showAlert(type, message) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = 'alert alert-' + type + ' alert-dismissible fade show';
+    alertDiv.innerHTML = message + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+    document.querySelector('.container-fluid').insertBefore(alertDiv, document.querySelector('.row'));
+    
+    setTimeout(function() {
+        alertDiv.remove();
+    }, 5000);
+}
+</script>
+{% endblock %}

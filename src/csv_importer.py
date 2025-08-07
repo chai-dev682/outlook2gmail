@@ -12,6 +12,12 @@ class CSVImporter:
     def __init__(self, microsoft_auth):
         self.microsoft_auth = microsoft_auth
     
+    def _safe_strip(self, value):
+        """Safely convert value to string and strip whitespace"""
+        if pd.isna(value) or value is None:
+            return ''
+        return str(value).strip()
+    
     def import_accounts(self, csv_file_path):
         """Import accounts from CSV file"""
         try:
@@ -25,10 +31,11 @@ class CSVImporter:
             for index, row in df.iterrows():
                 try:
                     # Skip if not Outlook provider
-                    if row.get('Provider', '').lower() != 'outlook':
+                    provider = self._safe_strip(row.get('Provider', '')).lower()
+                    if provider != 'outlook':
                         continue
                     
-                    username = row.get('Username', '').strip()
+                    username = self._safe_strip(row.get('Username', ''))
                     if not username:
                         continue
                     
@@ -42,23 +49,24 @@ class CSVImporter:
                     # Create new account
                     account = OutlookAccount(
                         username=username,
-                        full_name=row.get('Full Name', '').strip(),
-                        recovery_email=row.get('Recovery Email', '').strip(),
-                        birthday=row.get('Birthday', '').strip()
+                        email=username,
+                        full_name=self._safe_strip(row.get('Full Name', '')),
+                        recovery_email=self._safe_strip(row.get('Recovery Email', '')),
+                        birthday=self._safe_strip(row.get('Birthday', ''))
                     )
                     
                     # Handle password (encrypt if provided)
-                    password = row.get('Password', '').strip()
+                    password = self._safe_strip(row.get('Password', ''))
                     if password:
                         account.password = self.microsoft_auth.encrypt_token(password)
                     
                     # Handle refresh token (encrypt if provided)
-                    refresh_token = row.get('OAuth2 Refresh Token', '').strip()
+                    refresh_token = self._safe_strip(row.get('OAuth2 Refresh Token', ''))
                     if refresh_token:
                         account.refresh_token = self.microsoft_auth.encrypt_token(refresh_token)
                     
                     # Parse proxy information
-                    proxy_string = row.get('Browser Proxy', '').strip()
+                    proxy_string = self._safe_strip(row.get('Browser Proxy', ''))
                     if proxy_string:
                         proxy_info = self._parse_proxy_string(proxy_string)
                         if proxy_info:
@@ -81,7 +89,7 @@ class CSVImporter:
                     
                 except Exception as e:
                     logger.error(f"Error importing row {index}: {str(e)}")
-                    errors.append(f"Row {index}: {str(e)}")
+                    errors.append(f"Row {index} (Username: {self._safe_strip(row.get('Username', 'unknown'))}): {str(e)}")
             
             # Final commit
             db.session.commit()
@@ -129,11 +137,12 @@ class CSVImporter:
             for index, row in df.iterrows():
                 try:
                     # Skip if not Outlook provider
-                    if row.get('Provider', '').lower() != 'outlook':
+                    provider = self._safe_strip(row.get('Provider', '')).lower()
+                    if provider != 'outlook':
                         continue
                     
-                    username = row.get('Username', '').strip()
-                    refresh_token = row.get('OAuth2 Refresh Token', '').strip()
+                    username = self._safe_strip(row.get('Username', ''))
+                    refresh_token = self._safe_strip(row.get('OAuth2 Refresh Token', ''))
                     
                     if not username or not refresh_token:
                         continue
