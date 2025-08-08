@@ -871,9 +871,53 @@ def resume_scheduler():
 # @login_required
 def update_scheduler():
     """Update scheduler interval"""
-    minutes = request.json.get('minutes', 30)
-    scheduler.update_interval(minutes)
-    return jsonify({'success': True})
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+        
+        minutes = data.get('minutes')
+        if not minutes:
+            return jsonify({'success': False, 'message': 'Minutes parameter is required'}), 400
+        
+        try:
+            minutes = int(minutes)
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'message': 'Minutes must be a valid number'}), 400
+        
+        if minutes < 1:
+            return jsonify({'success': False, 'message': 'Interval must be at least 1 minute'}), 400
+        
+        if minutes > 10080:  # 1 week
+            return jsonify({'success': False, 'message': 'Interval cannot exceed 1 week (10080 minutes)'}), 400
+        
+        # Update the scheduler
+        success = scheduler.update_interval(minutes)
+        
+        if success:
+            logger.info(f"Scheduler interval updated to {minutes} minutes via API")
+            return jsonify({
+                'success': True, 
+                'message': f'Interval updated to {minutes} minutes',
+                'interval_minutes': minutes
+            })
+        else:
+            return jsonify({'success': False, 'message': 'Failed to update scheduler interval'}), 500
+            
+    except Exception as e:
+        logger.error(f"Error updating scheduler interval: {str(e)}")
+        return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
+
+@app.route('/api/scheduler/status')
+# @login_required
+def get_scheduler_status():
+    """Get current scheduler status"""
+    try:
+        status = scheduler.get_status()
+        return jsonify({'success': True, 'status': status})
+    except Exception as e:
+        logger.error(f"Error getting scheduler status: {str(e)}")
+        return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
 
 @app.route('/settings')
 # @login_required

@@ -19,6 +19,8 @@ class ForwardingScheduler:
         self.is_running = False
         self.current_job = None
         self.lock = threading.Lock()
+        self.app = None
+        self.current_interval_minutes = 30  # Default interval
 
         
     def init_app(self, app):
@@ -30,6 +32,7 @@ class ForwardingScheduler:
         
         # Add scheduled job
         interval_minutes = app.config.get('FORWARD_INTERVAL_MINUTES', 30)
+        self.current_interval_minutes = interval_minutes
         use_enhanced = app.config.get('USE_ENHANCED_FORWARDER', True)
         
         self.scheduler.add_job(
@@ -203,16 +206,59 @@ class ForwardingScheduler:
     
     def update_interval(self, minutes):
         """Update forwarding interval"""
-        self.scheduler.reschedule_job(
-            job_id='forward_emails',
-            trigger=IntervalTrigger(minutes=minutes)
-        )
-        logger.info(f"Scheduler interval updated to {minutes} minutes")
+        try:
+            if minutes < 1:
+                raise ValueError("Interval must be at least 1 minute")
+            
+            self.current_interval_minutes = minutes
+            
+            # Get the current job configuration
+            current_job = self.scheduler.get_job('forward_emails')
+            if not current_job:
+                logger.error("Forward emails job not found")
+                return False
+            
+            # Update the job trigger
+            self.scheduler.reschedule_job(
+                job_id='forward_emails',
+                trigger=IntervalTrigger(minutes=minutes)
+            )
+            
+            # Update the app config if app is available
+            if self.app:
+                with self.app.app_context():
+                    self.app.config['FORWARD_INTERVAL_MINUTES'] = minutes
+            
+            logger.info(f"Scheduler interval updated to {minutes} minutes")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to update scheduler interval: {str(e)}")
+            return False
     
     def get_status(self):
         """Get scheduler status"""
-        return {
-            'running': self.scheduler.running,
-            'job_running': self.is_running,
-            'current_job_id': self.current_job.id if self.current_job else None
-        } 
+        try:
+            job = self.scheduler.get_job('forward_emails')
+            next_run_time = job.next_run_time if job else None
+            
+            return {
+                'running': self.scheduler.running,
+                'job_running': self.is_running,
+                'current_job_id': self.current_job.id if self.current_job else None,
+                'interval_minutes': self.current_interval_minutes,
+                'next_run_time': next_run_time.isoformat() if next_run_time else None,
+                'job_exists': job is not None,
+                'scheduler_state': self.scheduler.state.name if hasattr(self.scheduler.state, 'name') else str(self.scheduler.state)
+            }
+        except Exception as e:
+            logger.error(f"Error getting scheduler status: {str(e)}")
+            return {
+                'running': False,
+                'job_running': self.is_running,
+                'current_job_id': None,
+                'interval_minutes': self.current_interval_minutes,
+                'next_run_time': None,
+                'job_exists': False,
+                'error': str(e)
+            } 

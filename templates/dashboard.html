@@ -124,6 +124,12 @@
                             {{ scheduler_status.next_run.strftime('%Y-%m-%d %H:%M') if scheduler_status.next_run else 'N/A' }}
                         </div>
                     </div>
+                    <div class="row mb-3">
+                        <div class="col-6">Interval:</div>
+                        <div class="col-6">
+                            <span id="scheduler-interval">{{ scheduler_status.interval_minutes or 30 }}</span> minutes
+                        </div>
+                    </div>
                     <div class="row">
                         <div class="col-12">
                             {% if not scheduler_status.is_paused %}
@@ -335,21 +341,126 @@ function resumeScheduler() {
 
 // Update interval
 function updateInterval() {
-    const minutes = prompt('Enter forwarding interval in minutes:', '30');
-    if (minutes && !isNaN(minutes)) {
-        $.post('/api/scheduler/update', 
-            JSON.stringify({minutes: parseInt(minutes)}),
-            function(response) {
+    // First, get the current scheduler status to ensure we have accurate interval
+    $.get('/api/scheduler/status', function(statusResponse) {
+        let currentInterval = '30'; // Default fallback
+        
+        if (statusResponse.success && statusResponse.status && statusResponse.status.interval_minutes) {
+            currentInterval = statusResponse.status.interval_minutes.toString();
+        } else {
+            // Fallback to reading from DOM if API fails
+            const domInterval = $('#scheduler-interval').text();
+            if (domInterval && !isNaN(domInterval)) {
+                currentInterval = domInterval;
+            }
+        }
+        
+        const minutes = prompt(`Enter forwarding interval in minutes (current: ${currentInterval}):`, currentInterval);
+        
+        if (minutes === null) {
+            return; // User cancelled
+        }
+        
+        if (!minutes || isNaN(minutes) || parseInt(minutes) < 1) {
+            alert('Please enter a valid number greater than 0');
+            return;
+        }
+        
+        const intervalMinutes = parseInt(minutes);
+        
+        if (intervalMinutes > 10080) {
+            alert('Interval cannot exceed 1 week (10080 minutes)');
+            return;
+        }
+        
+        // Show loading state
+        const originalText = $('#scheduler-interval').text();
+        $('#scheduler-interval').text('Updating...');
+        
+        $.ajax({
+            url: '/api/scheduler/update',
+            method: 'POST',
+            data: JSON.stringify({minutes: intervalMinutes}),
+            contentType: 'application/json',
+            success: function(response) {
                 if (response.success) {
-                    alert('Interval updated successfully!');
-                    location.reload();
+                    alert(`Interval updated successfully to ${intervalMinutes} minutes!`);
+                    
+                    // Update the display immediately
+                    $('#scheduler-interval').text(intervalMinutes);
+                    
+                    // Reload page to refresh all scheduler info
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    alert(`Failed to update interval: ${response.message || 'Unknown error'}`);
+                    $('#scheduler-interval').text(originalText);
                 }
             },
-            'json'
-        ).fail(function() {
-            alert('Failed to update interval');
+            error: function(xhr) {
+                let errorMessage = 'Failed to update interval';
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    errorMessage = response.message || errorMessage;
+                } catch (e) {
+                    // Use default message
+                }
+                alert(errorMessage);
+                $('#scheduler-interval').text(originalText);
+            }
         });
-    }
+    }).fail(function() {
+        // If status API fails, continue with DOM value
+        const currentInterval = $('#scheduler-interval').text() || '30';
+        console.warn('Could not fetch current scheduler status, using DOM value:', currentInterval);
+        
+        // Continue with the original logic using DOM value
+        const minutes = prompt(`Enter forwarding interval in minutes (current: ${currentInterval}):`, currentInterval);
+        // ... rest of the logic would be the same
+        if (minutes !== null && !isNaN(minutes) && parseInt(minutes) >= 1 && parseInt(minutes) <= 10080) {
+            const intervalMinutes = parseInt(minutes);
+            
+            $.ajax({
+                url: '/api/scheduler/update',
+                method: 'POST',
+                data: JSON.stringify({minutes: intervalMinutes}),
+                contentType: 'application/json',
+                success: function(response) {
+                    if (response.success) {
+                        alert(`Interval updated successfully to ${intervalMinutes} minutes!`);
+                        location.reload();
+                    } else {
+                        alert(`Failed to update interval: ${response.message || 'Unknown error'}`);
+                    }
+                },
+                error: function(xhr) {
+                    alert('Failed to update interval');
+                }
+            });
+        }
+    });
+}
+
+// Refresh scheduler status
+function refreshSchedulerStatus() {
+    $.get('/api/scheduler/status', function(response) {
+        if (response.success && response.status) {
+            const status = response.status;
+            
+            // Update interval display
+            if (status.interval_minutes) {
+                $('#scheduler-interval').text(status.interval_minutes);
+            }
+            
+            // Update next run time if available
+            if (status.next_run_time) {
+                const nextRun = new Date(status.next_run_time);
+                const formatted = nextRun.toLocaleDateString() + ' ' + nextRun.toLocaleTimeString();
+                $('#scheduler-next-run').text(formatted);
+            }
+        }
+    }).fail(function() {
+        console.warn('Failed to refresh scheduler status');
+    });
 }
 
 // Update next run time
@@ -380,10 +491,12 @@ function updateNextRun() {
 $(document).ready(function() {
     loadStats();
     updateNextRun();
+    refreshSchedulerStatus(); // Load current scheduler status
     
     // Update every 30 seconds
     setInterval(function() {
         updateNextRun();
+        refreshSchedulerStatus(); // Refresh scheduler status too
     }, 30000);
 });
 </script>
