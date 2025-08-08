@@ -70,7 +70,7 @@
                         </td>
                         <td>
                             {% if account.consecutive_errors > 0 %}
-                                <span class="badge bg-danger">{{ account.consecutive_errors }}</span>
+                                <span class="badge bg-danger">{{ account.total_emails_failed }}</span>
                                 {% if account.last_error %}
                                     <i class="bi bi-info-circle" data-bs-toggle="tooltip" 
                                        data-bs-placement="top"
@@ -91,12 +91,10 @@
                                    class="btn btn-outline-info" title="View Details">
                                     <i class="bi bi-eye"></i>
                                 </a>
-                                {% if account.consecutive_errors > 0 or account.last_error %}
                                 <a href="{{ url_for('reauth_account', account_id=account.id) }}" 
                                    class="btn btn-outline-warning" title="Re-authenticate">
                                     <i class="bi bi-arrow-clockwise"></i>
                                 </a>
-                                {% endif %}
                             </div>
                         </td>
                     </tr>

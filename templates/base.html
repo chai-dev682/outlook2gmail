@@ -129,11 +129,11 @@
                                 <i class="fab fa-microsoft"></i> Outlook Accounts
                             </a>
                         </li>
-                        <li class="nav-item">
+                        <!-- <li class="nav-item">
                             <a class="nav-link {% if request.endpoint == 'gmail_accounts' %}active{% endif %}" href="{{ url_for('gmail_accounts') }}">
                                 <i class="fab fa-google"></i> Gmail Accounts
                             </a>
-                        </li>
+                        </li> -->
                         <li class="nav-item">
                             <a class="nav-link {% if request.endpoint == 'import_accounts' %}active{% endif %}" href="{{ url_for('import_accounts') }}">
                                 <i class="bi bi-upload"></i> Import Outlook Accounts
@@ -142,11 +142,11 @@
                         
                         <!-- Forwarding Management Section -->
                         <div class="nav-section">Forwarding</div>
-                        <li class="nav-item">
+                        <!-- <li class="nav-item">
                             <a class="nav-link {% if request.endpoint == 'forwarding_rules' %}active{% endif %}" href="{{ url_for('forwarding_rules') }}">
                                 <i class="bi bi-arrow-left-right"></i> Forwarding Rules
                             </a>
-                        </li>
+                        </li> -->
                         <li class="nav-item">
                             <a class="nav-link {% if request.endpoint == 'jobs' %}active{% endif %}" href="{{ url_for('jobs') }}">
                                 <i class="bi bi-clock-history"></i> Jobs

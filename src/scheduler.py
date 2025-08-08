@@ -91,15 +91,15 @@ class ForwardingScheduler:
                     logger.info("Using enhanced email forwarder with rules")
                     forwarder = EnhancedEmailForwarder(microsoft_auth)
                 else:
-                    logger.info("Using legacy email forwarder")
+                    logger.info("Using legacy email forwarder with Gmail API")
                     forwarder = EmailForwarder(
                         microsoft_auth,
-                        self.app.config['GMAIL_CREDENTIALS_FILE'],
-                        self.app.config['GMAIL_TARGET_EMAIL']
+                        self.app.config.get('GMAIL_CREDENTIALS_FILE', 'config/gmail_credentials.json'),
+                        self.app.config.get('GMAIL_TARGET_EMAIL', '')
                     )
                     
                     if not forwarder.initialize_gmail_service():
-                        raise Exception("Failed to initialize Gmail service")
+                        raise Exception("Failed to initialize Gmail API service")
                 
                 logger.info(f"Processing {len(active_accounts)} active accounts")
                 

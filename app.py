@@ -142,9 +142,7 @@ def auth_callback():
         
         if 'access_token' in result:
             # Get user info to identify the account
-            print("res  ", result)
             user_info = microsoft_auth.get_user_info(result['access_token'])
-            print(user_info)
             
             if user_info:
                 email = user_info.get('mail') or user_info.get('userPrincipalName')
@@ -440,7 +438,6 @@ def gmail_auth():
     
     redirect_uri = f"{app.config['APP_URL']}/gmail/callback"
     auth_url = gmail_service.get_auth_url(credentials_file, redirect_uri)
-    print("auth_url", auth_url)
     
     if auth_url:
         return redirect(auth_url)
@@ -837,7 +834,6 @@ def trigger_forward():
     """Manually trigger forwarding using enhanced forwarder"""
     try:
         use_enhanced = app.config.get('USE_ENHANCED_FORWARDER', True)
-        print("use_enhanced", use_enhanced)
         
         if use_enhanced:
             # Use enhanced forwarder with rules

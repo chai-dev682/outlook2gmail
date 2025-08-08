@@ -31,7 +31,7 @@ class EmailForwarder:
         self.h2t.ignore_links = False
         
     def initialize_gmail_service(self):
-        """Initialize Gmail API service"""
+        """Initialize Gmail API service with token storage"""
         try:
             logger.warning("Legacy EmailForwarder detected - Enhanced forwarder recommended for better Gmail support")
             
@@ -41,31 +41,63 @@ class EmailForwarder:
                 logger.info("Please ensure config/gmail_credentials.json exists")
                 return False
             
-            # For legacy mode, we'll just return False and recommend enhanced forwarder
-            # The enhanced forwarder has proper OAuth handling for multiple Gmail accounts
-            logger.info("Use --use-rules flag or enhanced forwarder for full Gmail OAuth support")
-            logger.info("Legacy mode requires service account credentials or pre-authorized tokens")
+            # Token storage file
+            token_file = 'config/gmail_token.json'
             
-            # Try to load as service account credentials
-            try:
-                # Service account credentials
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    self.gmail_creds_file,
-                    scopes=['https://www.googleapis.com/auth/gmail.send']
-                )
+            creds = None
+            # Load existing token if available
+            if os.path.exists(token_file):
+                try:
+                    from google.oauth2.credentials import Credentials
+                    creds = Credentials.from_authorized_user_file(token_file, 
+                        scopes=['https://www.googleapis.com/auth/gmail.send'])
+                    logger.info("Loaded existing Gmail tokens")
+                except Exception as e:
+                    logger.warning(f"Failed to load existing tokens: {e}")
+                    creds = None
 
-                creds = flow.run_local_server(port=0)
-                
-                # Create Gmail service
-                self.gmail_service = build('gmail', 'v1', credentials=creds)
-                logger.info("Gmail service initialized with service account")
-                return True
+            # If there are no (valid) credentials available, get new ones
+            if not creds or not creds.valid:
+                if creds and creds.expired and creds.refresh_token:
+                    try:
+                        from google.auth.transport.requests import Request
+                        creds.refresh(Request())
+                        logger.info("Refreshed expired Gmail tokens")
+                    except Exception as e:
+                        logger.warning(f"Failed to refresh tokens: {e}")
+                        creds = None
+
+                if not creds:
+                    # Need new authorization
+                    logger.info("No valid tokens found, starting OAuth flow...")
+                    logger.info("This will open a browser window for authorization (one-time setup)")
                     
-            except Exception as e:
-                logger.error(f"Failed to load Gmail credentials: {str(e)}")
-                logger.info("For OAuth support, use enhanced forwarder with --use-rules flag")
-                return False
-                
+                    try:
+                        flow = InstalledAppFlow.from_client_secrets_file(
+                            self.gmail_creds_file,
+                            scopes=['https://www.googleapis.com/auth/gmail.send']
+                        )
+                        creds = flow.run_local_server(port=0)
+                        logger.info("OAuth authorization completed")
+                    except Exception as e:
+                        logger.error(f"OAuth flow failed: {e}")
+                        logger.info("Make sure you have a desktop environment or use enhanced forwarder")
+                        return False
+
+                # Save the credentials for the next run
+                try:
+                    os.makedirs('config', exist_ok=True)
+                    with open(token_file, 'w') as token:
+                        token.write(creds.to_json())
+                    logger.info("Saved Gmail tokens for future use")
+                except Exception as e:
+                    logger.warning(f"Failed to save tokens: {e}")
+
+            # Create Gmail service
+            self.gmail_service = build('gmail', 'v1', credentials=creds)
+            logger.info("Gmail service initialized successfully")
+            return True
+                    
         except Exception as e:
             logger.error(f"Failed to initialize Gmail service: {str(e)}")
             logger.info("Consider using enhanced forwarder: python cli.py forward-now --use-rules")
@@ -151,23 +183,9 @@ class EmailForwarder:
         """Create a MIME message for forwarding"""
         message = MIMEMultipart()
         
-        # Set headers
-        from_info = outlook_email.get('from', {})
-        sender_name = from_info.get('emailAddress', {}).get('name', 'Unknown')
-        sender_email = from_info.get('emailAddress', {}).get('address', 'unknown@outlook.com')
-        
         message['To'] = self.gmail_target_email
-        message['Subject'] = f"FWD: {outlook_email.get('subject', 'No Subject')}"
-        
-        # Create forward header
-        received_date = outlook_email.get('receivedDateTime', '')
-        forward_header = f"""
----------- Forwarded message ----------
-From: {sender_name} <{sender_email}>
-Date: {received_date}
-Subject: {outlook_email.get('subject', 'No Subject')}
-
-"""
+        message['Subject'] = outlook_email.get('subject', 'No Subject')
+        message['From'] = outlook_email.get('from', {}).get('emailAddress', {}).get('address', 'unknown@outlook.com')
         
         # Get email body
         body_content = outlook_email.get('body', {}).get('content', '')
@@ -175,15 +193,9 @@ Subject: {outlook_email.get('subject', 'No Subject')}
         
         # Convert HTML to text if needed
         if body_type.lower() == 'html':
-            text_body = self.h2t.handle(body_content)
-            full_body = forward_header + text_body
-            
-            # Attach both text and HTML versions
-            message.attach(MIMEText(full_body, 'plain'))
-            message.attach(MIMEText(forward_header + body_content, 'html'))
+            message.attach(MIMEText(body_content, 'html'))
         else:
-            full_body = forward_header + body_content
-            message.attach(MIMEText(full_body, 'plain'))
+            message.attach(MIMEText(body_content, 'plain'))
         
         # Add attachments if any
         if attachments:
