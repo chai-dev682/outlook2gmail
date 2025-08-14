@@ -2,6 +2,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime
 import logging
+import json
+import os
 from .models import OutlookAccount, ForwardingJob, db
 from .email_forwarder import EmailForwarder
 from .enhanced_email_forwarder import EnhancedEmailForwarder
@@ -17,6 +19,7 @@ class ForwardingScheduler:
     def __init__(self):
         self.scheduler = BackgroundScheduler()
         self.is_running = False
+        self.is_paused = False  # Track paused state explicitly
         self.current_job = None
         self.lock = threading.Lock()
         self.app = None
@@ -27,11 +30,14 @@ class ForwardingScheduler:
         """Initialize scheduler with Flask app"""
         self.app = app
         
+        # Load persisted state
+        self._load_state()
+        
         # Start scheduler
         self.scheduler.start()
         
         # Add scheduled job
-        interval_minutes = app.config.get('FORWARD_INTERVAL_MINUTES', 30)
+        interval_minutes = self.current_interval_minutes or app.config.get('FORWARD_INTERVAL_MINUTES', 30)
         self.current_interval_minutes = interval_minutes
         use_enhanced = app.config.get('USE_ENHANCED_FORWARDER', True)
         
@@ -43,7 +49,12 @@ class ForwardingScheduler:
             replace_existing=True
         )
         
-        logger.info(f"Scheduler initialized with {interval_minutes} minute interval, enhanced={use_enhanced}")
+        # Apply paused state if it was persisted
+        if self.is_paused:
+            self.scheduler.pause()
+            logger.info(f"Scheduler restored to paused state")
+        
+        logger.info(f"Scheduler initialized with {interval_minutes} minute interval, enhanced={use_enhanced}, paused={self.is_paused}")
 
     
     def run_forwarding_job(self, job_type='scheduled', use_enhanced=None):
@@ -194,14 +205,56 @@ class ForwardingScheduler:
         thread.start()
         return thread
     
+    def _get_state_file_path(self):
+        """Get the path to the scheduler state file"""
+        return os.path.join('config', 'scheduler_state.json')
+    
+    def _load_state(self):
+        """Load persisted scheduler state"""
+        try:
+            state_file = self._get_state_file_path()
+            if os.path.exists(state_file):
+                with open(state_file, 'r') as f:
+                    state = json.load(f)
+                    self.is_paused = state.get('is_paused', False)
+                    self.current_interval_minutes = state.get('interval_minutes', 30)
+                    logger.info(f"Loaded scheduler state: paused={self.is_paused}, interval={self.current_interval_minutes}")
+            else:
+                logger.info("No persisted scheduler state found, using defaults")
+        except Exception as e:
+            logger.error(f"Error loading scheduler state: {str(e)}")
+    
+    def _save_state(self):
+        """Save scheduler state to persist across restarts"""
+        try:
+            state = {
+                'is_paused': self.is_paused,
+                'interval_minutes': self.current_interval_minutes,
+                'last_updated': datetime.utcnow().isoformat()
+            }
+            
+            state_file = self._get_state_file_path()
+            os.makedirs(os.path.dirname(state_file), exist_ok=True)
+            
+            with open(state_file, 'w') as f:
+                json.dump(state, f, indent=2)
+            
+            logger.debug(f"Saved scheduler state: {state}")
+        except Exception as e:
+            logger.error(f"Error saving scheduler state: {str(e)}")
+    
     def pause_scheduler(self):
         """Pause the scheduler"""
         self.scheduler.pause()
+        self.is_paused = True
+        self._save_state()  # Persist the state
         logger.info("Scheduler paused")
     
     def resume_scheduler(self):
         """Resume the scheduler"""
         self.scheduler.resume()
+        self.is_paused = False
+        self._save_state()  # Persist the state
         logger.info("Scheduler resumed")
     
     def update_interval(self, minutes):
@@ -229,6 +282,9 @@ class ForwardingScheduler:
                 with self.app.app_context():
                     self.app.config['FORWARD_INTERVAL_MINUTES'] = minutes
             
+            # Save the updated state
+            self._save_state()
+            
             logger.info(f"Scheduler interval updated to {minutes} minutes")
             return True
             
@@ -242,8 +298,14 @@ class ForwardingScheduler:
             job = self.scheduler.get_job('forward_emails')
             next_run_time = job.next_run_time if job else None
             
+            # Determine if scheduler is truly paused
+            # APScheduler state: 0=stopped, 1=running, 2=paused
+            scheduler_state = self.scheduler.state
+            actual_paused = (scheduler_state == 2) or self.is_paused
+            
             return {
                 'running': self.scheduler.running,
+                'is_paused': actual_paused,
                 'job_running': self.is_running,
                 'current_job_id': self.current_job.id if self.current_job else None,
                 'interval_minutes': self.current_interval_minutes,
@@ -255,6 +317,7 @@ class ForwardingScheduler:
             logger.error(f"Error getting scheduler status: {str(e)}")
             return {
                 'running': False,
+                'is_paused': self.is_paused,
                 'job_running': self.is_running,
                 'current_job_id': None,
                 'interval_minutes': self.current_interval_minutes,

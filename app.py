@@ -857,15 +857,48 @@ def trigger_forward():
 # @login_required
 def pause_scheduler():
     """Pause scheduler"""
-    scheduler.pause_scheduler()
-    return jsonify({'success': True})
+    try:
+        scheduler.pause_scheduler()
+        status = scheduler.get_status()
+        return jsonify({'success': True, 'status': status})
+    except Exception as e:
+        logger.error(f"Error pausing scheduler: {str(e)}")
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/scheduler/resume', methods=['POST'])
 # @login_required
 def resume_scheduler():
     """Resume scheduler"""
-    scheduler.resume_scheduler()
-    return jsonify({'success': True})
+    try:
+        scheduler.resume_scheduler()
+        status = scheduler.get_status()
+        return jsonify({'success': True, 'status': status})
+    except Exception as e:
+        logger.error(f"Error resuming scheduler: {str(e)}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/scheduler/toggle', methods=['POST'])
+# @login_required
+def toggle_scheduler():
+    """Toggle scheduler pause/resume state"""
+    try:
+        status = scheduler.get_status()
+        if status.get('is_paused', False):
+            scheduler.resume_scheduler()
+            action = 'resumed'
+        else:
+            scheduler.pause_scheduler()
+            action = 'paused'
+        
+        new_status = scheduler.get_status()
+        return jsonify({
+            'success': True, 
+            'action': action,
+            'status': new_status
+        })
+    except Exception as e:
+        logger.error(f"Error toggling scheduler: {str(e)}")
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/scheduler/update', methods=['POST'])
 # @login_required

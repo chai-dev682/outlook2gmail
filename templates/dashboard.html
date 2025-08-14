@@ -109,13 +109,7 @@
                     <div class="row mb-3">
                         <div class="col-6">Status:</div>
                         <div class="col-6">
-                            {% if scheduler_status.is_running %}
-                                <span class="badge bg-warning">Running</span>
-                            {% elif scheduler_status.is_paused %}
-                                <span class="badge bg-secondary">Paused</span>
-                            {% else %}
-                                <span class="badge bg-success">Active</span>
-                            {% endif %}
+                            <span id="scheduler-status-badge" class="badge">Loading...</span>
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -132,15 +126,10 @@
                     </div>
                     <div class="row">
                         <div class="col-12">
-                            {% if not scheduler_status.is_paused %}
-                                <button class="btn btn-sm btn-warning" onclick="pauseScheduler()">
-                                    <i class="bi bi-pause-fill"></i> Pause
-                                </button>
-                            {% else %}
-                                <button class="btn btn-sm btn-success" onclick="resumeScheduler()">
-                                    <i class="bi bi-play-fill"></i> Resume
-                                </button>
-                            {% endif %}
+                            <button class="btn btn-sm btn-warning" id="scheduler-toggle-btn" onclick="toggleScheduler()" disabled>
+                                <i class="bi bi-pause-fill" id="scheduler-toggle-icon"></i> 
+                                <span id="scheduler-toggle-text">Loading...</span>
+                            </button>
                             <button class="btn btn-sm btn-primary" onclick="updateInterval()">
                                 <i class="bi bi-gear"></i> Update Interval
                             </button>
@@ -321,23 +310,74 @@ function triggerForwarding() {
     }
 }
 
-// Pause scheduler
-function pauseScheduler() {
-    $.post('/api/scheduler/pause', function(response) {
-        if (response.success) {
-            location.reload();
-        }
-    });
+// Debounce function to prevent double-clicks
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
 }
 
-// Resume scheduler
-function resumeScheduler() {
-    $.post('/api/scheduler/resume', function(response) {
-        if (response.success) {
-            location.reload();
+// Global state for scheduler
+let schedulerState = {
+    isToggling: false,
+    currentStatus: null
+};
+
+// Toggle scheduler with debouncing
+const toggleScheduler = debounce(function() {
+    if (schedulerState.isToggling) {
+        console.log('Toggle already in progress, skipping...');
+        return;
+    }
+    
+    schedulerState.isToggling = true;
+    const $btn = $('#scheduler-toggle-btn');
+    const $icon = $('#scheduler-toggle-icon');
+    const $text = $('#scheduler-toggle-text');
+    
+    // Disable button and show loading state
+    $btn.prop('disabled', true);
+    $text.text('Processing...');
+    
+    $.ajax({
+        url: '/api/scheduler/toggle',
+        method: 'POST',
+        success: function(response) {
+            if (response.success && response.status) {
+                // Update UI based on new status
+                updateSchedulerUI(response.status);
+                
+                // Show success feedback
+                const action = response.status.is_paused ? 'paused' : 'resumed';
+                console.log(`Scheduler ${action} successfully`);
+                
+                // Store the new state
+                schedulerState.currentStatus = response.status;
+            } else {
+                console.error('Failed to toggle scheduler');
+                alert('Failed to toggle scheduler. Please try again.');
+                // Refresh status to ensure UI is in sync
+                refreshSchedulerStatus();
+            }
+        },
+        error: function(xhr) {
+            console.error('Error toggling scheduler:', xhr);
+            alert('Error toggling scheduler. Please check the logs.');
+            // Refresh status to ensure UI is in sync
+            refreshSchedulerStatus();
+        },
+        complete: function() {
+            schedulerState.isToggling = false;
+            $btn.prop('disabled', false);
         }
     });
-}
+}, 500); // 500ms debounce delay
 
 // Update interval
 function updateInterval() {
@@ -440,26 +480,80 @@ function updateInterval() {
     });
 }
 
+// Update scheduler UI based on status
+function updateSchedulerUI(status) {
+    const $btn = $('#scheduler-toggle-btn');
+    const $icon = $('#scheduler-toggle-icon');
+    const $text = $('#scheduler-toggle-text');
+    const $badge = $('#scheduler-status-badge');
+    
+    if (status.is_paused) {
+        // Scheduler is paused
+        $btn.removeClass('btn-warning').addClass('btn-success');
+        $icon.removeClass('bi-pause-fill').addClass('bi-play-fill');
+        $text.text('Resume');
+        $badge.removeClass('bg-success bg-warning').addClass('bg-secondary');
+        $badge.text('Paused');
+    } else if (status.job_running) {
+        // Job is currently running
+        $btn.removeClass('btn-success').addClass('btn-warning');
+        $icon.removeClass('bi-play-fill').addClass('bi-pause-fill');
+        $text.text('Pause');
+        $badge.removeClass('bg-success bg-secondary').addClass('bg-warning');
+        $badge.text('Running');
+    } else {
+        // Scheduler is active (not paused, not running)
+        $btn.removeClass('btn-success').addClass('btn-warning');
+        $icon.removeClass('bi-play-fill').addClass('bi-pause-fill');
+        $text.text('Pause');
+        $badge.removeClass('bg-secondary bg-warning').addClass('bg-success');
+        $badge.text('Active');
+    }
+    
+    // Update interval display
+    if (status.interval_minutes) {
+        $('#scheduler-interval').text(status.interval_minutes);
+    }
+    
+    // Update next run time if available
+    if (status.next_run_time && !status.is_paused) {
+        const nextRun = new Date(status.next_run_time);
+        const formatted = nextRun.toLocaleDateString() + ' ' + nextRun.toLocaleTimeString();
+        $('#scheduler-next-run').text(formatted);
+        updateNextRun(); // Update the countdown
+    } else if (status.is_paused) {
+        $('#scheduler-next-run').text('Paused');
+        $('#next-run').text('Paused');
+    } else {
+        $('#scheduler-next-run').text('N/A');
+        $('#next-run').text('N/A');
+    }
+}
+
 // Refresh scheduler status
 function refreshSchedulerStatus() {
+    // Don't refresh if currently toggling
+    if (schedulerState.isToggling) {
+        return;
+    }
+    
     $.get('/api/scheduler/status', function(response) {
         if (response.success && response.status) {
             const status = response.status;
             
-            // Update interval display
-            if (status.interval_minutes) {
-                $('#scheduler-interval').text(status.interval_minutes);
-            }
+            // Store the current status
+            schedulerState.currentStatus = status;
             
-            // Update next run time if available
-            if (status.next_run_time) {
-                const nextRun = new Date(status.next_run_time);
-                const formatted = nextRun.toLocaleDateString() + ' ' + nextRun.toLocaleTimeString();
-                $('#scheduler-next-run').text(formatted);
-            }
+            // Update UI
+            updateSchedulerUI(status);
+            
+            // Enable the toggle button if it was disabled
+            $('#scheduler-toggle-btn').prop('disabled', false);
         }
     }).fail(function() {
         console.warn('Failed to refresh scheduler status');
+        // Try to enable the button anyway
+        $('#scheduler-toggle-btn').prop('disabled', false);
     });
 }
 
@@ -489,15 +583,39 @@ function updateNextRun() {
 
 // Initialize
 $(document).ready(function() {
+    // Load stats and initialize scheduler status immediately
     loadStats();
-    updateNextRun();
-    refreshSchedulerStatus(); // Load current scheduler status
+    refreshSchedulerStatus(); // Load current scheduler status first
     
-    // Update every 30 seconds
+    // Set up periodic updates
     setInterval(function() {
-        updateNextRun();
-        refreshSchedulerStatus(); // Refresh scheduler status too
-    }, 30000);
+        // Only update if not currently toggling
+        if (!schedulerState.isToggling) {
+            updateNextRun();
+            refreshSchedulerStatus();
+        }
+    }, 30000); // Update every 30 seconds
+    
+    // Also refresh on window focus (when user returns to tab)
+    $(window).on('focus', function() {
+        if (!schedulerState.isToggling) {
+            refreshSchedulerStatus();
+        }
+    });
+    
+    // Prevent accidental double-clicks on all buttons
+    $('button').on('click', function(e) {
+        const $this = $(this);
+        if ($this.data('clicked')) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+        }
+        $this.data('clicked', true);
+        setTimeout(function() {
+            $this.data('clicked', false);
+        }, 1000);
+    });
 });
 </script>
 {% endblock %} 
